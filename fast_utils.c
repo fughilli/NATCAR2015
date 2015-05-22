@@ -2,27 +2,366 @@
 #include <stdarg.h>
 #include <stdbool.h>
 
-uint8_t alloc_mem[__ALLOC_MEM_SIZE];
-
-// TODO: build an actual allocator.
-
-uint32_t alloc_off = 0;
-
 #define MAX_BASE (16)
 const char __arb_base_digits[] = "0123456789ABCDEF"; //"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
 
 #define __digits_val_rev_lookup(_digit_) ((((_digit_) >= '0')&&((_digit_) <= '9'))?((_digit_)-'0'):((((_digit_) >= 'A')&&((_digit_) <= 'F'))?((_digit_)-('A'-10)):(-1)))
 
-void* fast_alloc(size_t sz)
+#if FAST_USE_ALLOC
+static uint8_t alloc_mem[__ALLOC_MEM_SIZE];
+
+#define hdr_payload(i)  ((HDR *) &alloc_mem[i])->payload
+#define hdr_freeall(i)  ((HDR *) &alloc_mem[i])->freeall
+#define hdr_succesr(i)  ((HDR *) &alloc_mem[i])->succesr
+#define hdr_previus(i)  ((HDR *) &alloc_mem[i])->previus
+
+#define sizehdr (sizeof(HDR))
+
+typedef struct       // free block header/footer/linked list
 {
-	uint8_t* mem = &alloc_mem[alloc_off];
-	alloc_off += sz;
-	return (void*)mem;
+    int  payload ;    // size of block (excluding headers)
+    char freeall ;    // is this block allocated? 0=free/1=allocated
+    int  succesr ;    // successor free block
+    int  previus ;    // previous free block
+} HDR;
+
+static HDR anchor;
+
+void init_heap()   // initialize the heap
+{
+    anchor.payload =  0 ;   // anchor
+    anchor.freeall =  1 ;
+    anchor.succesr =  0 ;
+    anchor.previus = -1 ;
+
+    hdr_payload(0) = __ALLOC_MEM_SIZE-2*sizehdr ;   // header
+    hdr_freeall(0) = 0 ;
+    hdr_succesr(0) = __ALLOC_MEM_SIZE ;
+    hdr_previus(0) = -1 ;
+    hdr_payload(__ALLOC_MEM_SIZE-sizehdr) = __ALLOC_MEM_SIZE-2*sizehdr ; // footer
+    hdr_freeall(__ALLOC_MEM_SIZE-sizehdr) = 0 ;
 }
 
-void fast_free(void* buf)
+void zero_header(int hi)
 {
-	; // Do nothing.
+    int i;
+    for(i = 0; i < sizehdr; i++)
+        alloc_mem[hi + i] = 0;
+}
+
+void copy_header(int dest, int src)
+{
+    int i;
+    for(i = 0; i < sizehdr; i++)
+    	alloc_mem[dest + i] = alloc_mem[src + i];
+}
+
+#define prev_ftr(hdr) ((hdr) - sizehdr)
+#define prev_hdr(hdr) ((hdr) - (sizehdr*2) - hdr_payload(prev_ftr(hdr)))
+#define matching_hdr(ftr) ((ftr) - sizehdr - hdr_payload(ftr))
+#define matching_ftr(hdr) ((hdr) + sizehdr + hdr_payload(hdr))
+#define next_hdr(hdr) ((hdr) + (sizehdr*2) + hdr_payload(hdr))
+#define next_ftr(hdr) (matching_ftr(next_hdr(hdr)))
+
+void fast_free( void *buf )   // frees the block at address aa
+{
+    int headerpos = ((int)buf - (int)alloc_mem) - sizehdr;
+
+    if(!hdr_freeall(headerpos))
+        return;
+
+    int nextheaderpos, nextfooterpos, prevheaderpos, prevfooterpos;
+
+    // The position of the header/footer for aa
+    int footerpos = matching_ftr(headerpos);
+
+    int prevfree = 0, nextfree = 0;
+
+    // The position for the header/footer of the block after aa
+    if(footerpos != __ALLOC_MEM_SIZE - sizehdr)
+    {
+        nextheaderpos = next_hdr(headerpos);
+        nextfooterpos = matching_ftr(nextheaderpos);
+        nextfree = !hdr_freeall(nextheaderpos);
+    }
+
+    //int nowfree = __ALLOC_MEM_SIZE;
+
+    // The position for the header/footer of the block before aa
+    if(headerpos != 0)
+    {
+        //nowfree =
+    	prevheaderpos = prev_hdr(headerpos);
+        prevfooterpos = prev_ftr(headerpos);
+        prevfree = !hdr_freeall(prevheaderpos);
+    }
+
+    if(nextfree && prevfree)
+    {
+        int prevprecessor = hdr_previus(prevheaderpos);
+        int prevsuccessor = hdr_succesr(prevheaderpos);
+
+        if(prevprecessor != -1)
+        {
+            hdr_succesr(prevprecessor) = prevsuccessor;
+            hdr_succesr(matching_ftr(prevprecessor)) = prevsuccessor;
+        }
+        else
+        {
+            hdr_previus(prevsuccessor) = -1;
+            anchor.succesr = prevsuccessor;
+
+            if(anchor.succesr == __ALLOC_MEM_SIZE)
+                anchor.succesr = 0;
+        }
+
+        if(prevsuccessor != __ALLOC_MEM_SIZE)
+        {
+            hdr_previus(prevsuccessor) = prevprecessor;
+            hdr_previus(matching_ftr(prevsuccessor)) = prevprecessor;
+        }
+
+        int nextprecessor = hdr_previus(nextheaderpos);
+        int nextsuccessor = hdr_succesr(nextheaderpos);
+
+        if(nextprecessor != -1)
+        {
+            hdr_succesr(nextprecessor) = nextsuccessor;
+            hdr_succesr(matching_ftr(nextprecessor)) = nextsuccessor;
+        }
+        else
+        {
+            hdr_previus(nextsuccessor) = -1;
+            anchor.succesr = nextsuccessor;
+
+            if(anchor.succesr == __ALLOC_MEM_SIZE)
+                anchor.succesr = 0;
+        }
+        if(nextsuccessor != __ALLOC_MEM_SIZE)
+        {
+            hdr_previus(nextsuccessor) = nextprecessor;
+            hdr_previus(matching_ftr(nextsuccessor)) = nextprecessor;
+        }
+
+        hdr_freeall(prevheaderpos) = 0;
+        hdr_payload(prevheaderpos) = nextfooterpos - prevheaderpos - sizehdr;
+        hdr_succesr(prevheaderpos) = anchor.succesr; //hdr_succesr(nextfooterpos);
+        hdr_previus(prevheaderpos) = -1;
+
+        hdr_previus(anchor.succesr) = prevheaderpos;
+        hdr_previus(matching_ftr(anchor.succesr)) = prevheaderpos;
+        anchor.succesr = prevheaderpos;
+
+        if(anchor.succesr == __ALLOC_MEM_SIZE)
+                anchor.succesr = 0;
+
+        zero_header(nextheaderpos);
+        zero_header(prevfooterpos);
+        zero_header(headerpos);
+        zero_header(footerpos);
+
+        copy_header(nextfooterpos, prevheaderpos);
+    }
+    else if(nextfree)
+    {
+        hdr_freeall(headerpos) = 0;
+        hdr_payload(headerpos) = nextfooterpos - headerpos - sizehdr;
+        hdr_succesr(headerpos) = hdr_succesr(nextfooterpos);
+        hdr_previus(headerpos) = hdr_previus(nextfooterpos);
+
+        if(anchor.succesr == nextheaderpos)
+            anchor.succesr = headerpos;
+
+        if(hdr_succesr(headerpos) != __ALLOC_MEM_SIZE)
+        {
+            hdr_previus(hdr_succesr(headerpos)) = headerpos;
+            hdr_previus(matching_ftr(hdr_succesr(headerpos))) = headerpos;
+        }
+        if(hdr_previus(headerpos) != -1)
+        {
+            hdr_succesr(hdr_previus(headerpos)) = headerpos;
+            hdr_succesr(matching_ftr(hdr_previus(headerpos))) = headerpos;
+        }
+
+        copy_header(nextfooterpos, headerpos);
+
+        zero_header(footerpos);
+        zero_header(nextheaderpos);
+
+        //nowfree = headerpos;
+    }
+    else if(prevfree)
+    {
+        hdr_freeall(prevheaderpos) = 0;
+        hdr_payload(prevheaderpos) = footerpos - prevheaderpos - sizehdr;
+
+        if(anchor.succesr == headerpos)
+            anchor.succesr = prevheaderpos;
+
+        zero_header(prevfooterpos);
+        zero_header(headerpos);
+
+        copy_header(footerpos, prevheaderpos);
+    }
+    else
+    {
+        hdr_freeall(headerpos) = 0;
+
+        hdr_previus(headerpos) = -1;
+        hdr_succesr(headerpos) = anchor.succesr;
+        hdr_previus(anchor.succesr) = headerpos;
+
+        copy_header(matching_ftr(headerpos), headerpos);
+        copy_header(matching_ftr(anchor.succesr), anchor.succesr);
+
+        anchor.succesr = headerpos;
+        //nowfree = headerpos;
+    }
+}
+
+void* fast_alloc( size_t sz )   // allocates a block of size int
+{
+    if(sz % sizehdr)
+        sz = sz - (sz % sizehdr) + sizehdr; // Round up to nearest multiple of 16
+
+    int curheaderpos = anchor.succesr; // Start at the first free block
+
+    // Iterate through the linked list of free blocks
+    for(; curheaderpos < __ALLOC_MEM_SIZE; curheaderpos = hdr_succesr(curheaderpos))
+    {
+        if(hdr_payload(curheaderpos) > (sz + sizehdr*2)) // room to split
+        {
+            // Compute some positions
+            int next_footerpos = hdr_succesr(curheaderpos) - sizehdr;
+            int footerpos = curheaderpos + sizehdr + sz;
+            int next_headerpos = footerpos + sizehdr;
+            int old_successor = hdr_succesr(curheaderpos);
+            int old_precessor = hdr_previus(curheaderpos);
+
+            hdr_freeall(curheaderpos) = 1;
+            hdr_payload(curheaderpos) = sz;
+            hdr_succesr(curheaderpos) = -1;
+            hdr_succesr(curheaderpos) = -1;
+
+            copy_header(footerpos, curheaderpos);
+
+            hdr_freeall(next_headerpos) = 0;
+            hdr_payload(next_headerpos) = next_footerpos - (next_headerpos + sizehdr);
+            hdr_previus(next_headerpos) = old_precessor;
+            hdr_succesr(next_headerpos) = old_successor;
+
+            copy_header(next_footerpos, next_headerpos);
+
+            if(anchor.succesr == curheaderpos)
+            {
+                anchor.succesr = next_headerpos;
+            }
+
+            return &alloc_mem[curheaderpos + sizehdr];
+
+        }
+        else if(hdr_payload(curheaderpos) >= sz) // no room to split, but still fits
+        {
+            hdr_freeall(curheaderpos) = 1;
+            copy_header(hdr_succesr(curheaderpos) - sizehdr, curheaderpos);
+
+//            int j;
+//            for(j = curheaderpos; j < __ALLOC_MEM_SIZE; j = hdr_succesr(j))
+//            {
+//                if(!hdr_freeall(j))
+//                {
+//                    anchor.succesr = j;
+//                    return curheaderpos + sizehdr;
+//                }
+//            }
+
+            // If this was the first free block in the chain, move the anchor to the next one
+            if(anchor.succesr == curheaderpos)
+            {
+                anchor.succesr = hdr_succesr(curheaderpos);
+                hdr_previus(anchor.succesr) = -1;
+            }
+            else
+            {
+                if(hdr_succesr(curheaderpos) != __ALLOC_MEM_SIZE)
+                {
+                    hdr_previus(hdr_succesr(curheaderpos)) = hdr_previus(curheaderpos);
+                    hdr_previus(matching_ftr(hdr_succesr(curheaderpos))) = hdr_previus(curheaderpos);
+                }
+                if(hdr_previus(curheaderpos) != -1)
+                {
+                    hdr_succesr(hdr_previus(curheaderpos)) = hdr_succesr(curheaderpos);
+                    hdr_succesr(matching_ftr(hdr_previus(curheaderpos))) = hdr_succesr(curheaderpos);
+                }
+                else
+                    anchor.succesr = hdr_succesr(curheaderpos);
+            }
+
+            hdr_succesr(curheaderpos) = -1;
+            hdr_previus(curheaderpos) = -1;
+
+            copy_header(matching_ftr(curheaderpos), curheaderpos);
+
+            return &alloc_mem[curheaderpos + sizehdr];
+        } // else, doesn't fit at all
+
+        //prevheaderpos = curheaderpos;
+    }
+
+//    int old__ALLOC_MEM_SIZE = __ALLOC_MEM_SIZE;
+//    __ALLOC_MEM_SIZE *= 2;
+//    alloc_mem = (char*)realloc(alloc_mem, __ALLOC_MEM_SIZE);
+//
+//    int i;
+//    for(i = old__ALLOC_MEM_SIZE; i < __ALLOC_MEM_SIZE; i++)
+//        alloc_mem[i] = 0;
+//
+//    // If the block at the end of the alloc_mem is free
+//    if(!hdr_freeall(old__ALLOC_MEM_SIZE - sizehdr))
+//    {
+//        // Expand the last block to fill up the new space
+//        int oldendheaderpos = matching_hdr(old__ALLOC_MEM_SIZE - sizehdr);
+//        zero_header(old__ALLOC_MEM_SIZE - sizehdr);
+//
+//        hdr_payload(oldendheaderpos) = __ALLOC_MEM_SIZE - oldendheaderpos - sizehdr*2;
+//        hdr_succesr(oldendheaderpos) = __ALLOC_MEM_SIZE;
+//        copy_header(__ALLOC_MEM_SIZE - sizehdr, oldendheaderpos);
+//    }
+//    else
+//    {
+//        // Add a new block
+//        hdr_payload(old__ALLOC_MEM_SIZE) = old__ALLOC_MEM_SIZE - sizehdr*2;
+//        hdr_freeall(old__ALLOC_MEM_SIZE) = 0;
+//        hdr_succesr(old__ALLOC_MEM_SIZE) = __ALLOC_MEM_SIZE;
+//        hdr_previus(old__ALLOC_MEM_SIZE) = prevheaderpos;
+//
+//        copy_header(__ALLOC_MEM_SIZE - sizehdr, old__ALLOC_MEM_SIZE);
+//    }
+
+    return NULL;
+
+}
+#endif
+
+void fast_swap8(uint8_t* a, uint8_t* b)
+{
+	uint8_t temp = (*a);
+	(*a) = (*b);
+	(*b) = temp;
+}
+
+void fast_swap16(uint16_t* a, uint16_t* b)
+{
+	uint16_t temp = (*a);
+	(*a) = (*b);
+	(*b) = temp;
+}
+
+void fast_swap32(uint32_t* a, uint32_t* b)
+{
+	uint32_t temp = (*a);
+	(*a) = (*b);
+	(*b) = temp;
 }
 
 void fast_memcpy(void* dst, const void* src, size_t sz)
@@ -61,6 +400,8 @@ void fast_memmove(void* dst, const void* src, size_t sz)
 
 void fast_memset(void* dst, uint8_t val, size_t sz)
 {
+    if(sz == 0)
+        return;
     do
     {
         --sz;
@@ -72,6 +413,14 @@ size_t fast_strlen(const char* str)
 {
 	size_t ret = 0;
 	while(str[ret])
+		ret++;
+	return ret;
+}
+
+size_t fast_strnlen(const char* str, size_t maxlen)
+{
+	size_t ret = 0;
+	while(str[ret] && (ret < maxlen))
 		ret++;
 	return ret;
 }
@@ -96,14 +445,28 @@ int fast_memcmp(const void* ptr1, const void* ptr2, size_t sz)
 size_t fast_strcpy(char* stra, const char* strb)
 {
 	size_t ret = fast_strlen(strb);
+	fast_memcpy(stra, strb, ret+1);
+	return ret;
+}
+
+size_t fast_strncpy(char* stra, const char* strb, size_t maxlen)
+{
+	size_t ret = fast_strnlen(strb, maxlen);
+	if(ret > maxlen)
+	{
+		stra[maxlen-1] = 0;
+		ret--;
+	}
+	if(ret < maxlen)
+		ret++;
 	fast_memcpy(stra, strb, ret);
 	return ret;
 }
 
-int fast_strcmp(char* stra, const char* strb)
+int fast_strcmp(const char* stra, const char* strb)
 {
 	int ret = 0;
-	while ((ret == 0) && (*stra) && (*strb))
+	while ((ret == 0) && ((*stra) || (*strb)))
 	{
 		ret += (*stra);
 		ret -= (*strb);
@@ -358,9 +721,7 @@ bool fast_sntob(const char* str, size_t sz, bool* succ)
 	return false;
 }
 
-#define SNFTMTF_FPARTDIGITS (4)
-
-int fast_snfmtf(char* buf, size_t bufsiz, float f, unsigned long base)
+int fast_snfmtf(char* buf, size_t bufsiz, float f, size_t digits, unsigned long base)
 {
 	if (bufsiz == 0 || base > MAX_BASE)
 		return 0;
@@ -389,7 +750,7 @@ int fast_snfmtf(char* buf, size_t bufsiz, float f, unsigned long base)
 
 	int i;
 	long fpartmul = 1;
-	for(i = 0; i < SNFTMTF_FPARTDIGITS; i++)
+	for(i = 0; i < digits; i++)
 		fpartmul *= base;
 
 	long wholepart = (long)f;
@@ -400,8 +761,11 @@ int fast_snfmtf(char* buf, size_t bufsiz, float f, unsigned long base)
 	{
 		buf[bufindex++] = '.';
 	}
+	uint32_t tbufindex = bufindex;
 	bufindex += fast_snfmtui(&buf[bufindex], bufsiz - bufindex, fpart, 10);
-
+    fast_memmove(&buf[tbufindex + digits - (bufindex - tbufindex)], &buf[tbufindex], (bufindex - tbufindex + 1));
+    fast_memset(&buf[tbufindex], '0', digits - (bufindex - tbufindex));
+    bufindex = tbufindex + digits;
 	return bufindex;
 }
 
@@ -545,8 +909,24 @@ void fast_snprintf(char* buf, size_t bufsiz, const char* fmt, ...)
 			case 'f':
 			{
 				float argval;
-				argval = (float)va_arg(ap, double);
-				bufpos += fast_snfmtf(&buf[bufpos], bufsiz-bufpos, argval, 10);
+//				uint32_t tempargval;
+//				tempargval = va_arg(ap, uint32_t);
+//				argval = *((float*)(&tempargval));
+				argval = va_arg(ap, double);
+				if(!precision)
+                    precision = FLOAT_DEFAULT_DIGITS;
+                if(precision > FLOAT_MAX_DIGITS)
+                    precision = FLOAT_MAX_DIGITS;
+				bufpos += fast_snfmtf(&buf[bufpos], bufsiz-bufpos, argval, precision, 10);
+				precision = 0;
+				sym_unsigned = false;
+				fmtpos++;
+				continue;
+			}
+			case 's':
+			{
+				char* argval = va_arg(ap, char*);
+				fast_strncpy(&buf[bufpos], argval, fast_min(fast_strlen(argval), bufsiz - bufpos));
 			}
 			case 'd':
 			case 'x':
@@ -597,13 +977,13 @@ void fast_snprintf(char* buf, size_t bufsiz, const char* fmt, ...)
                     else
                     {
                         size_t intstrsiz = fast_snfmti(&buf[bufpos], bufsiz-bufpos, argval, base);
-                        if(intstrsiz < precision)
+                        if(intstrsiz < precision + 1)
                         {
                             if((bufsiz-bufpos) >= precision)
                             {
-                                fast_memmove(&buf[bufpos + (precision - intstrsiz)], &buf[bufpos], intstrsiz);
-                                fast_memset(&buf[bufpos], (uint8_t)((padwzeros)?('0'):(' ')), precision-intstrsiz);
-                                bufpos += precision;
+                                fast_memmove(&buf[bufpos + (precision - intstrsiz) + 2], &buf[bufpos + 1], intstrsiz);
+                                fast_memset(&buf[bufpos + 1], (uint8_t)((padwzeros)?('0'):(' ')), precision-intstrsiz + 1);
+                                bufpos += precision + 1;
                             }
                             else
                                 break;
