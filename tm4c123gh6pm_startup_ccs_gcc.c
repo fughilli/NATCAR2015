@@ -23,6 +23,10 @@
 //*****************************************************************************
 
 #include <stdint.h>
+#include "driverlib/fpu.h"
+#include "driverlib/rom_map.h"
+#include "inc/hw_nvic.h"
+#include "inc/hw_memmap.h"
 
 extern void PWMGen1Handler();
 
@@ -35,6 +39,7 @@ void ResetISR(void);
 static void NmiSR(void);
 static void FaultISR(void);
 static void IntDefaultHandler(void);
+static void FPUFaultHandler(void);
 
 volatile uint32_t _sbrk;
 
@@ -196,7 +201,7 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // Wide Timer 4 subtimer B
     IntDefaultHandler,                      // Wide Timer 5 subtimer A
     IntDefaultHandler,                      // Wide Timer 5 subtimer B
-    IntDefaultHandler,                      // FPU
+    FPUFaultHandler,                      // FPU
     0,                                      // Reserved
     0,                                      // Reserved
     IntDefaultHandler,                      // I2C4 Master and Slave
@@ -291,6 +296,10 @@ ResetISR(void)
     // Note that this does not use DriverLib since it might not be included in
     // this project.
     //
+//    HWREG(NVIC_CPAC) = ((HWREG(NVIC_CPAC) &
+//                             ~(NVIC_CPAC_CP10_M | NVIC_CPAC_CP11_M)) |
+//                             NVIC_CPAC_CP10_FULL | NVIC_CPAC_CP11_FULL);
+
     HWREG(0xE000ED88) = ((HWREG(0xE000ED88) & ~0x00F00000) | 0x00F00000);
     
     //
@@ -351,6 +360,17 @@ IntDefaultHandler(void)
     while(1)
     {
     }
+}
+
+static void
+FPUFaultHandler(void)
+{
+	//
+	// Go into an infinite loop.
+	//
+	while(1)
+	{
+	}
 }
 
 __attribute__ ((noreturn()))
