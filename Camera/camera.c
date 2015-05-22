@@ -49,6 +49,8 @@ void PWMGen1Handler()
 {
 	PWMGenIntClear(PWM0_BASE, PWM_GEN_1, PWM_INT_CNT_LOAD);
 
+	camera_buffer = camera_DoubleBuffer[camera_DBSelected];
+
 	if (!camera_DBSelected)
 	{
 		camera_DBSelected = 1;
