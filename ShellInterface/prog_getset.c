@@ -99,11 +99,9 @@ int set_main(char* argv[], int argc)
 			{
 			case VARTYPE_FLOAT:
 				ffloat = (*((float*)(set_entries[i].data)));
-				fast_snprintf(printbuf, 64, " := %d.%05d\r\n",
-									(long) ffloat,
-									(long) (100000
-											* (ffloat
-													- (long) ffloat)));
+				fast_memcpy(printbuf, " := ", 4);
+				fint = fast_snfmtf(printbuf + 4, 60, ffloat, 6, 10);
+				fast_memcpy(printbuf + 4 + fint, "\r\n", 3);
 				break;
 			case VARTYPE_INT:
 				fint = (*((int32_t*)(set_entries[i].data)));
@@ -222,7 +220,7 @@ int get_main(char* argv[], int argc)
 
 	for(i = 0; i < MAX_SET_ENTRIES; i++)
 	{
-		if(listall || (fast_strlen(set_entries[i].name) && fast_strcmp(argv[1], set_entries[i].name) == 0))
+		if(fast_strlen(set_entries[i].name) && (listall || (fast_strcmp(argv[1], set_entries[i].name) == 0)))
 		{
 			switch(set_entries[i].type)
 			{
@@ -251,11 +249,10 @@ int get_main(char* argv[], int argc)
 			{
 			case VARTYPE_FLOAT:
 				ffloat = (*((float*)(set_entries[i].data)));
-				fast_snprintf(printbuf, 64, " := %d.%05d\r\n",
-									(long) ffloat,
-									(long) (100000
-											* (ffloat
-													- (long) ffloat)));
+				//fast_snprintf(printbuf, 64, " := %f\r\n", ffloat);
+				fast_memcpy(printbuf, " := ", 4);
+				fint = fast_snfmtf(printbuf + 4, 60, ffloat, 6, 10);
+				fast_memcpy(printbuf + 4 + fint, "\r\n", 3);
 				break;
 			case VARTYPE_INT:
 				fint = (*((int32_t*)(set_entries[i].data)));
