@@ -40,6 +40,8 @@ volatile uint32_t testval;
 camera_sample_t camera_DoubleBuffer[2][CAMERA_SAMPLES];
 camera_sample_t *camera_buffer;
 uint32_t camera_DBSelected;
+enum Camera_t current_Camera;
+
 
 #define _CT_ATOI(val) #val
 #define CT_ATOI(val) _CT_ATOI(val)
@@ -57,6 +59,9 @@ void PWMGen1Handler()
 		uDMAChannelTransferSet(UDMA_CHANNEL_ADC3 | UDMA_ALT_SELECT,
 		UDMA_MODE_PINGPONG, (void*) (ADC0_BASE + ADC_O_SSFIFO3),
 				camera_DoubleBuffer[camera_DBSelected], CAMERA_SAMPLES);
+        // switch camera input to near camera
+	    ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH1 | ADC_CTL_IE | ADC_CTL_END);
+        current_Camera = FAR;
 	}
 	if (camera_DBSelected)
 	{
@@ -64,6 +69,9 @@ void PWMGen1Handler()
 		uDMAChannelTransferSet(UDMA_CHANNEL_ADC3 | UDMA_PRI_SELECT,
 		UDMA_MODE_PINGPONG, (void*) (ADC0_BASE + ADC_O_SSFIFO3),
 				camera_DoubleBuffer[camera_DBSelected], CAMERA_SAMPLES);
+        // switch camera input to far camera
+	    ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END);
+        current_Camera = NEAR;
 	}
 }
 
@@ -113,9 +121,9 @@ void camera_init()
 	PWMGenIntTrigEnable(PWM0_BASE, PWM_GEN_1, PWM_INT_CNT_LOAD);
 
 	DEBUG_LINE("camera_init");
-
-	/********************************************
-	 * 			  ADC CONFIGURATION				*
+	
+    /********************************************
+	 * 			  ADC CONFIGURATION			    *
 	 ********************************************
 	 */
 
@@ -129,7 +137,10 @@ void camera_init()
 	DEBUG_LINE("camera_init");
 
 	SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    // Camera Far
 	GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_3);
+    // Camera Near
+	GPIOPinTypeADC(GPIO_PORTE_BASE, GPIO_PIN_2);
 
 	DEBUG_LINE("camera_init");
 
@@ -146,6 +157,7 @@ void camera_init()
 
 	// Start writing into the first buffer
 	camera_DBSelected = 0;
+    current_Camera = FAR;
 	// Expose the other buffer
 	camera_buffer = camera_DoubleBuffer[1];
 

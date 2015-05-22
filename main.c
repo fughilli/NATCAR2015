@@ -27,6 +27,7 @@
 
 #include "Motor/motor.h"
 #include "Camera/camera.h"
+#include "Gyro/gyro.h"
 
 #include "PID/PIDControl.h"
 
@@ -37,6 +38,8 @@
 #include "debug_serial.h"
 
 #include "Settings/defaults.h"
+
+#include "bezier.h"
 
 float speed;
 
@@ -52,6 +55,16 @@ float min_speed;
 bool red_led, green_led, blue_led;
 
 bool be_still;
+
+// some variables which control the strategy used by the car
+enum strategy_t
+{
+    BEZIER = 1,
+    SAFE = 2,
+    AVERAGE = 3,
+};
+enum strategy_t strategy = AVERAGE;
+float bezier_strat_lookahead = 0.7;
 
 const char darkness_charset[] = " .,:;!?#";
 
@@ -235,6 +248,7 @@ int main(void)
 
 		for (i = 0; i < (CAMERA_SAMPLES - 1); i++)
 		{
+            // why use the derivative for this?
 			float absval = derivative_buffer[i] - minderiv;
 			float range = maxderiv - minderiv;
 
@@ -253,7 +267,48 @@ int main(void)
 		// Scale and apply with PID to servo
 		avgpos /= CAMERA_SAMPLES;
 
-		float servopos = PID_calculate(&servopid, avgpos, 0.5f, 0.01f);
+        // Separate variables to keep track of near and far viewpoints
+        static float nearPos = 0;
+        static float farPos = 0;
+
+        switch(current_Camera)
+        {
+            case NEAR:
+                nearPos = avgpos;
+                break;
+            case FAR:
+                farPos = avgpos;
+                break;
+        }
+
+        float travelTo = 0;
+        if (strategy == BEZIER)
+        {
+            // a more complicated bezier interpolation
+            // 64 and 128 were chosen because I figured they'd be similar in
+            // magnitude to nearPos and farPos
+            Point p1, p2, pGo;
+            p1.x = nearPos;
+            p1.y = 64;
+            p2.x = farPos;
+            p2.y = 128;
+            bezier(bezier_strat_lookahead, &p1, &p2, &pGo);
+            travelTo = arctan(pGo.x/pGo.y);
+        }
+        else if (strategy == SAFE)
+        {
+            // only use near camera for steering
+            // far camera used for speed scaling (which is down outside of the
+            // if-statement)
+            travelTo = nearPos;
+        }
+        else if (strategy == AVERAGE)
+        {
+            // simple linear interpolation
+            travelTo = (nearPos + farPos)/2.0;
+        }
+
+		float servopos = PID_calculate(&servopid, travelTo, 0.5f, 0.01f);
 
 		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, (red_led ? GPIO_PIN_1 : 0) | (blue_led ? GPIO_PIN_2 : 0) | (green_led ? GPIO_PIN_3 : 0));
 
@@ -269,7 +324,9 @@ int main(void)
 
 			if (speed_control)
 			{
-				motor_setSpeedf(min_speed + (speed_multiplier / (servopos * servopos)));
+                // changed to use far camera's position
+                float ctr_farPos = farPos - CAMERA_SAMPLES/2;
+				motor_setSpeedf(min_speed + (speed_multiplier / (ctr_farPos * ctr_farPos)));
 			}
 		}
 #endif
