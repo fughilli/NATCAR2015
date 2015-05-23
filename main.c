@@ -27,7 +27,6 @@
 
 #include "Motor/motor.h"
 #include "Camera/camera.h"
-#include "Gyro/gyro.h"
 
 #include "PID/PIDControl.h"
 
@@ -40,6 +39,8 @@
 #include "Settings/defaults.h"
 
 #include "bezier.h"
+
+#include <math.h>
 
 float speed;
 
@@ -139,6 +140,7 @@ camera_sample_t derivative_buffer[128];
 
 //#define DEBUG_B64_OUT
 //#define REMOTE_CONTROL
+#define DEBUG_LINE_TO_CONSOLE
 
 int main(void)
 {
@@ -271,7 +273,7 @@ int main(void)
         static float nearPos = 0;
         static float farPos = 0;
 
-        switch(current_Camera)
+        switch(camera_CurCamera)
         {
             case NEAR:
                 nearPos = avgpos;
@@ -292,8 +294,8 @@ int main(void)
             p1.y = 64;
             p2.x = farPos;
             p2.y = 128;
-            bezier(bezier_strat_lookahead, &p1, &p2, &pGo);
-            travelTo = arctan(pGo.x/pGo.y);
+            Bezier(bezier_strat_lookahead, &p1, &p2, &pGo);
+            travelTo = atan2(pGo.y, pGo.x);
         }
         else if (strategy == SAFE)
         {
@@ -357,7 +359,7 @@ int main(void)
 
 #else
 
-#ifndef DEBUG_B64_OUT
+#if !(defined(DEBUG_B64_OUT) || defined(DEBUG_LINE_TO_CONSOLE))
 
 		shell_poll();
 
@@ -375,6 +377,7 @@ int main(void)
 #endif
 
 #ifdef DEBUG_LINE_TO_CONSOLE
+		Serial_putc(UART_DEBUG_MODULE, camera_CurCamera + 'A');
 		for (i = 1; i < 128; i++)
 		{
 			derivative_buffer[i - 1] = abs(((int16_t)camera_buffer[i]) - ((int16_t)camera_buffer[i - 1]));

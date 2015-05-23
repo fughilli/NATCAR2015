@@ -12,18 +12,18 @@
 
 #define CAMERA_SAMPLES (128)
 
-enum Camera_t
+typedef enum
 {
     FAR = 1,
     NEAR = 0
-};
+} Camera_t;
 
 void camera_init();
 
 typedef uint16_t camera_sample_t;
 
 extern camera_sample_t* camera_buffer;
-extern enum Camera_t current_Camera;
+extern volatile Camera_t camera_CurCamera;
 
 // Callback type:
 // arg0 -> sample buffer

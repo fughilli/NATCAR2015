@@ -40,7 +40,7 @@ volatile uint32_t testval;
 camera_sample_t camera_DoubleBuffer[2][CAMERA_SAMPLES];
 camera_sample_t *camera_buffer;
 uint32_t camera_DBSelected;
-enum Camera_t current_Camera;
+volatile Camera_t camera_CurCamera;
 
 
 #define _CT_ATOI(val) #val
@@ -61,9 +61,9 @@ void PWMGen1Handler()
 				camera_DoubleBuffer[camera_DBSelected], CAMERA_SAMPLES);
         // switch camera input to near camera
 	    ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH1 | ADC_CTL_IE | ADC_CTL_END);
-        current_Camera = FAR;
+        camera_CurCamera = FAR;
 	}
-	if (camera_DBSelected)
+	else
 	{
 		camera_DBSelected = 0;
 		uDMAChannelTransferSet(UDMA_CHANNEL_ADC3 | UDMA_PRI_SELECT,
@@ -71,7 +71,7 @@ void PWMGen1Handler()
 				camera_DoubleBuffer[camera_DBSelected], CAMERA_SAMPLES);
         // switch camera input to far camera
 	    ADCSequenceStepConfigure(ADC0_BASE, 3, 0, ADC_CTL_CH0 | ADC_CTL_IE | ADC_CTL_END);
-        current_Camera = NEAR;
+        camera_CurCamera = NEAR;
 	}
 }
 
@@ -157,7 +157,7 @@ void camera_init()
 
 	// Start writing into the first buffer
 	camera_DBSelected = 0;
-    current_Camera = FAR;
+    camera_CurCamera = FAR;
 	// Expose the other buffer
 	camera_buffer = camera_DoubleBuffer[1];
 
