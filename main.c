@@ -58,13 +58,14 @@ bool red_led, green_led, blue_led;
 bool be_still;
 
 // some variables which control the strategy used by the car
-enum strategy_t
+typedef enum
 {
+	SAFE = 0,
     BEZIER = 1,
-    SAFE = 2,
-    AVERAGE = 3,
-};
-enum strategy_t strategy = AVERAGE;
+    AVERAGE = 2,
+    WEIGHTED = 3
+} strategy_t;
+strategy_t strategy = SAFE;
 float bezier_strat_lookahead = 0.7;
 
 const char darkness_charset[] = " .,:;!?#";
@@ -81,6 +82,18 @@ inline uint32_t map_val(uint32_t val, uint32_t inmin, uint32_t inmax,
 		return retval / divisor;
 	return 0;
 }
+
+typedef enum
+{
+	SPEEDCONT_FAR_INVSQ = 0,
+	SPEEDCONT_NEAR_INVSQ,
+	SPEEDCONT_AVG_INVSQ,
+	SPEEDCONT_WEIGHTED_INVSQ
+} speedcont_policy_t;
+
+speedcont_policy_t speedcont_policy;
+
+camera_buffer_index_t buffer_switch;
 
 set_entry_t set_entries[MAX_SET_ENTRIES];
 
@@ -156,6 +169,9 @@ int main(void)
 	green_led = false;
 	blue_led = false;
 	speed = 0.0f;
+	buffer_switch = CAMERA_BUFFER_A;
+	speedcont_policy = DEFAULT_SPEEDCONT_POLICY;
+	strategy = DEFAULT_STRATEGY;
 
 	SysCtlClockSet(
 			SYSCTL_SYSDIV_5 | SYSCTL_USE_PLL | SYSCTL_OSC_MAIN
@@ -174,7 +190,7 @@ int main(void)
 	GPIOPinTypeGPIOOutput(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3);
 	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, 0);
 
-	Serial_init(UART_DEBUG_MODULE, 9600);
+	Serial_init(UART_DEBUG_MODULE, 115200);
 
 	Serial_puts(UART_DEBUG_MODULE, "Hello there!\r\n", 100);
 
@@ -198,6 +214,8 @@ int main(void)
 	set_register_variable("edgec", VARTYPE_UINT, &edgeclip_count);
 	set_register_variable("still", VARTYPE_BOOL, &be_still);
 	set_register_variable("minsp", VARTYPE_FLOAT, &min_speed);
+	set_register_variable("scpol", VARTYPE_UINT, &speedcont_policy);
+	set_register_variable("strat", VARTYPE_UINT, &strategy);
 
 	set_register_variable("red", VARTYPE_BOOL, &red_led);
 	set_register_variable("green", VARTYPE_BOOL, &green_led);
@@ -231,8 +249,8 @@ int main(void)
 				continue;
 			}
 			derivative_buffer[i - 1] = abs(
-					((int16_t) camera_buffer[i])
-							- ((int16_t) camera_buffer[i - 1]));
+					((int16_t) camera_buffers[buffer_switch][i])
+							- ((int16_t) camera_buffers[buffer_switch][i - 1]));
 		}
 
 		// Get the min and max derivative values
@@ -273,15 +291,29 @@ int main(void)
         static float nearPos = 0;
         static float farPos = 0;
 
-        switch(camera_CurCamera)
+        switch(buffer_switch)
         {
-            case NEAR:
-                nearPos = avgpos;
+            case CAMERA_BUFFER_A:
+                nearPos = 1.0f - avgpos;
                 break;
-            case FAR:
+            case CAMERA_BUFFER_B:
                 farPos = avgpos;
                 break;
         }
+//        char debugposbuf[64];
+//        int dpbcursor = 0;
+//		fast_strcpy(debugposbuf, "NEAR: ");
+//		dpbcursor += 6;
+//		dpbcursor += fast_snfmtf(debugposbuf + dpbcursor, 64 - dpbcursor,
+//				nearPos, 6, 10);
+//		fast_strcpy(debugposbuf + dpbcursor, " FAR: ");
+//		dpbcursor += 6;
+//		dpbcursor += fast_snfmtf(debugposbuf + dpbcursor, 64 - dpbcursor,
+//				farPos, 6, 10);
+//		fast_strcpy(debugposbuf + dpbcursor, "\r\n");
+//        Serial_puts(UART_DEBUG_MODULE, debugposbuf, 64);
+
+        //servo_setPosf(farPos);
 
         float travelTo = 0;
         if (strategy == BEZIER)
@@ -290,12 +322,12 @@ int main(void)
             // 64 and 128 were chosen because I figured they'd be similar in
             // magnitude to nearPos and farPos
             Point p1, p2, pGo;
-            p1.x = nearPos;
-            p1.y = 64;
-            p2.x = farPos;
-            p2.y = 128;
+            p1.x = (nearPos-0.5f);
+            p1.y = 2.0f;
+            p2.x = (farPos-0.5f);
+            p2.y = 1.0f;
             Bezier(bezier_strat_lookahead, &p1, &p2, &pGo);
-            travelTo = atan2(pGo.y, pGo.x);
+            travelTo = pGo.x + 0.5f;
         }
         else if (strategy == SAFE)
         {
@@ -309,8 +341,26 @@ int main(void)
             // simple linear interpolation
             travelTo = (nearPos + farPos)/2.0;
         }
+        else if (strategy == WEIGHTED)
+        {
 
+        travelTo = ((0.25f)*nearPos + (0.75f)*farPos);
+
+        }
 		float servopos = PID_calculate(&servopid, travelTo, 0.5f, 0.01f);
+
+//	       char debugposbuf[64];
+//	        int dpbcursor = 0;
+//			fast_strcpy(debugposbuf, "TRTO: ");
+//			dpbcursor += 6;
+//			dpbcursor += fast_snfmtf(debugposbuf + dpbcursor, 64 - dpbcursor,
+//					travelTo, 6, 10);
+//			fast_strcpy(debugposbuf + dpbcursor, " SPO: ");
+//			dpbcursor += 6;
+//			dpbcursor += fast_snfmtf(debugposbuf + dpbcursor, 64 - dpbcursor,
+//					servopos, 6, 10);
+//			fast_strcpy(debugposbuf + dpbcursor, "\r\n");
+//	        Serial_puts(UART_DEBUG_MODULE, debugposbuf, 64);
 
 		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_1 | GPIO_PIN_2 | GPIO_PIN_3, (red_led ? GPIO_PIN_1 : 0) | (blue_led ? GPIO_PIN_2 : 0) | (green_led ? GPIO_PIN_3 : 0));
 
@@ -322,13 +372,31 @@ int main(void)
 		}
 		else
 		{
-			servo_setPosf(0.5f - servopos);
+			servo_setPosf(servopos + 0.5f);
 
 			if (speed_control)
 			{
                 // changed to use far camera's position
-                float ctr_farPos = farPos - CAMERA_SAMPLES/2;
-				motor_setSpeedf(min_speed + (speed_multiplier / (ctr_farPos * ctr_farPos)));
+                float ctr_farPos = farPos - 0.5f;
+                float ctr_nearPos = nearPos - 0.5f;
+                float ctr_avgPos = (ctr_farPos + ctr_nearPos)/2;
+                float ctr_weightedPos = ((0.25f)*ctr_nearPos + (0.75f)*ctr_farPos);
+                switch(speedcont_policy)
+                {
+                case SPEEDCONT_AVG_INVSQ:
+                	motor_setSpeedf(min_speed + (speed_multiplier / (ctr_avgPos * ctr_avgPos)));
+                	break;
+                case SPEEDCONT_FAR_INVSQ:
+                	motor_setSpeedf(min_speed + (speed_multiplier / (ctr_farPos * ctr_farPos)));
+                	break;
+                case SPEEDCONT_NEAR_INVSQ:
+                	motor_setSpeedf(min_speed + (speed_multiplier / (ctr_nearPos * ctr_nearPos)));
+                	break;
+                case SPEEDCONT_WEIGHTED_INVSQ:
+                	motor_setSpeedf(min_speed + (speed_multiplier / (ctr_weightedPos * ctr_weightedPos)));
+                	break;
+                }
+
 			}
 		}
 #endif
@@ -370,22 +438,42 @@ int main(void)
 #ifdef DEBUG_B64_OUT
 		for (i = 0; i < 128; i++)
 		{
-			Serial_putc(UART_DEBUG_MODULE, b64str[(camera_buffer[i] >> 6) & 0x3F]);
-			Serial_putc(UART_DEBUG_MODULE, b64str[camera_buffer[i] & 0x3F]);
+			Serial_putc(UART_DEBUG_MODULE, b64str[(camera_buffers[buffer_switch][i] >> 6) & 0x3F]);
+			Serial_putc(UART_DEBUG_MODULE, b64str[camera_buffers[buffer_switch][i] & 0x3F]);
 		}
 		Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
 #endif
 
 #ifdef DEBUG_LINE_TO_CONSOLE
-		Serial_putc(UART_DEBUG_MODULE, camera_CurCamera + 'A');
+
+		asm volatile (
+					"dsb\n\t"
+					"isb" :::
+			);
+
+		char numprintbuf[64];
+
+		//fast_snprintf(numprintbuf, 64, "Buffer A: 0x%08x B: 0x%08x\r\n", (unsigned int)camera_buffers[0], (unsigned int)camera_buffers[1]);
+		//Serial_puts(UART_DEBUG_MODULE, numprintbuf, 100);
+
+		Serial_putc(UART_DEBUG_MODULE, buffer_switch + 'A');
 		for (i = 1; i < 128; i++)
 		{
-			derivative_buffer[i - 1] = abs(((int16_t)camera_buffer[i]) - ((int16_t)camera_buffer[i - 1]));
+			derivative_buffer[i - 1] = abs(((int16_t)camera_buffers[buffer_switch][i]) - ((int16_t)camera_buffers[buffer_switch][i - 1]));
 			Serial_putc(UART_DEBUG_MODULE, darkness_charset[derivative_buffer[i - 1] >> 9]);
 		}
 		Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
 #endif
 
+		switch(buffer_switch)
+		{
+		case CAMERA_BUFFER_A:
+			buffer_switch = CAMERA_BUFFER_B;
+			break;
+		case CAMERA_BUFFER_B:
+			buffer_switch = CAMERA_BUFFER_A;
+			break;
+		}
 
 		SysCtlDelay(loopdelay);
 	}
