@@ -9,7 +9,7 @@
 #define PROG_GETSET_H_
 
 #define SET_MAX_NAMELEN (16)
-#define MAX_SET_ENTRIES (16)
+#define MAX_SET_ENTRIES (64)
 
 typedef enum
 {
