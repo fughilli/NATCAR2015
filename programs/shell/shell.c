@@ -7,7 +7,9 @@
 
 #include "shell.h"
 #include <stdint.h>
-#include "../debug_serial.h"
+#include "../driver_serial.h"
+
+#include "global_settings.h"
 
 const uint8_t _bsp_seq[] = {SHELL_BACKSPACE, ' ', SHELL_BACKSPACE};
 
@@ -28,14 +30,14 @@ shell_progMapEntry_t shell_progMap[SHELL_MAX_PROGRAMS];
 
 int help_main(char* argv[], int argc)
 {
-	Serial_puts(UART_DEBUG_MODULE, "The following programs are available:\r\n", 100);
+	Serial_puts(SERIAL_MODULE, "The following programs are available:\r\n");
 	int i;
 	for(i = 0; i < SHELL_MAX_PROGRAMS; i++)
 	{
 		if(fast_strlen(shell_progMap[i].name))
 		{
-			Serial_puts(UART_DEBUG_MODULE, shell_progMap[i].name, 100);
-			Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
+			Serial_puts(SERIAL_MODULE, shell_progMap[i].name);
+			Serial_puts(SERIAL_MODULE, "\r\n");
 		}
 	}
 	return 0;
@@ -52,7 +54,7 @@ void shell_initProgMap()
 
 void shell_init()
 {
-	Serial_puts(UART_DEBUG_MODULE, DEVICE_IDENTIFIER ":>", 100);
+	Serial_puts(SERIAL_MODULE, DEVICE_IDENTIFIER ":>");
 	shell_lineBufferIndex = 0;
 
 	shell_initProgMap();
@@ -98,23 +100,23 @@ shell_func_t shell_getProg(const char* name)
 
 void shell_poll()
 {
-	if (!Serial_avail(UART_DEBUG_MODULE))
+	if (!Serial_avail(SERIAL_MODULE))
 		return;
 
-	while (Serial_avail(UART_DEBUG_MODULE))
+	while (Serial_avail(SERIAL_MODULE))
 	{
-		char nextChar = Serial_getc(UART_DEBUG_MODULE);
+		char nextChar = Serial_getc(SERIAL_MODULE);
 
 		// Handle newline (end-of-command)
 		if (nextChar == '\r')
 		{
 			shell_lineBuffer[shell_lineBufferIndex++] = 0;
 
-			Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
+			Serial_puts(SERIAL_MODULE, "\r\n");
 
 			shell_processLine();
 
-			Serial_puts(UART_DEBUG_MODULE, DEVICE_IDENTIFIER ":>", 100);
+			Serial_puts(SERIAL_MODULE, DEVICE_IDENTIFIER ":>");
 			shell_lineBufferIndex = 0;
 			break;
 		}
@@ -123,11 +125,11 @@ void shell_poll()
 			if (shell_lineBufferIndex > 0)
 			{
 				shell_lineBufferIndex--;
-				Serial_writebuf(UART_DEBUG_MODULE, _bsp_seq, 3);
+				Serial_writebuf(SERIAL_MODULE, _bsp_seq, 3);
 			}
 			else
 			{
-				Serial_putc(UART_DEBUG_MODULE, SHELL_BELL_CHAR);
+				Serial_putc(SERIAL_MODULE, SHELL_BELL_CHAR);
 			}
 			continue;
 		}
@@ -144,12 +146,12 @@ void shell_poll()
 		// Handle line buffer overrun
 		if (shell_lineBufferIndex == SHELL_LINE_BUFFER_SIZE)
 		{
-			Serial_putc(UART_DEBUG_MODULE, SHELL_BELL_CHAR);
+			Serial_putc(SERIAL_MODULE, SHELL_BELL_CHAR);
 			shell_lineBufferIndex--;
 			continue;
 		}
 
-		Serial_putc(UART_DEBUG_MODULE, nextChar);
+		Serial_putc(SERIAL_MODULE, nextChar);
 	}
 }
 
@@ -190,7 +192,7 @@ void shell_processLine(void)
 
     		if(!breakOnQuote)
     		{
-    			Serial_puts(UART_DEBUG_MODULE, shell_error_mismatched_quotes, 100);
+    			Serial_puts(SERIAL_MODULE, shell_error_mismatched_quotes);
     			return;
     		}
     	}
@@ -216,7 +218,7 @@ void shell_processLine(void)
 			// If the maximum argument count has been reached
 			if (shell_argIndex == SHELL_MAX_ARGS)
 			{
-				Serial_puts(UART_DEBUG_MODULE, shell_error_too_many_args, 100);
+				Serial_puts(SERIAL_MODULE, shell_error_too_many_args);
 				return;
 			}
 
@@ -242,9 +244,9 @@ void shell_processLine(void)
     }
     else
     {
-    	Serial_puts(UART_DEBUG_MODULE, shell_error_unknown_command, fast_strlen(shell_error_unknown_command));
-        Serial_puts(UART_DEBUG_MODULE, shell_argBuffer[0], fast_strlen(shell_argBuffer[0]));
-        Serial_puts(UART_DEBUG_MODULE, "\'\r\n", 3);
+    	Serial_puts(SERIAL_MODULE, shell_error_unknown_command);
+        Serial_puts(SERIAL_MODULE, shell_argBuffer[0]);
+        Serial_puts(SERIAL_MODULE, "\'\r\n");
     }
 }
 

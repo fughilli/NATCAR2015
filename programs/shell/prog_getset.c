@@ -7,8 +7,10 @@
 
 #include "prog_getset.h"
 #include "../fast_utils.h"
-#include "../debug_serial.h"
+#include "../driver_serial.h"
 #include <stdbool.h>
+
+#include "global_settings.h"
 
 void set_register_variable(const char* name, vartype_t type, void* data)
 {
@@ -39,7 +41,7 @@ int set_main(char* argv[], int argc)
 	char printbuf[64];
 	if(argc != 3)
 	{
-		Serial_puts(UART_DEBUG_MODULE, "USAGE:\r\n\tset <VAR> <VAL>\r\n", 100);
+		Serial_puts(SERIAL_MODULE, "USAGE:\r\n\tset <VAR> <VAL>\r\n");
 		return -1;
 	}
 
@@ -68,27 +70,27 @@ int set_main(char* argv[], int argc)
 
 			if(!succ)
 			{
-				Serial_puts(UART_DEBUG_MODULE, "Invalid value!\r\n", 100);
+				Serial_puts(SERIAL_MODULE, "Invalid value!\r\n");
 				return -1;
 			}
 
 			switch(set_entries[i].type)
 			{
 			case VARTYPE_FLOAT:
-				Serial_puts(UART_DEBUG_MODULE, "float -> ", 9);
+				Serial_puts(SERIAL_MODULE, "float -> ");
 				break;
 			case VARTYPE_INT:
-				Serial_puts(UART_DEBUG_MODULE, "int -> ", 7);
+				Serial_puts(SERIAL_MODULE, "int -> ");
 				break;
 			case VARTYPE_UINT:
-				Serial_puts(UART_DEBUG_MODULE, "uint -> ", 8);
+				Serial_puts(SERIAL_MODULE, "uint -> ");
 				break;
 			case VARTYPE_BOOL:
-				Serial_puts(UART_DEBUG_MODULE, "bool -> ", 8);
+				Serial_puts(SERIAL_MODULE, "bool -> ");
 				break;
 			}
 
-			Serial_puts(UART_DEBUG_MODULE, set_entries[i].name, SET_MAX_NAMELEN);
+			Serial_puts(SERIAL_MODULE, set_entries[i].name);
 
 			float ffloat;
 			int32_t fint;
@@ -122,15 +124,15 @@ int set_main(char* argv[], int argc)
 
 			}
 
-			Serial_puts(UART_DEBUG_MODULE, printbuf, fast_strlen(printbuf));
+			Serial_puts(SERIAL_MODULE, printbuf);
 
 			return 0;
 		}
 	}
 
-	Serial_puts(UART_DEBUG_MODULE, "No such variable: ", 100);
-	Serial_puts(UART_DEBUG_MODULE, argv[1], SET_MAX_NAMELEN);
-	Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
+	Serial_puts(SERIAL_MODULE, "No such variable: ");
+	Serial_puts(SERIAL_MODULE, argv[1]);
+	Serial_puts(SERIAL_MODULE, "\r\n");
 
 //	bool succ = false, succui = false;
 //	float val = fast_sntof(argv[2], fast_strlen(argv[2]), 10, &succ);
@@ -192,11 +194,11 @@ int set_main(char* argv[], int argc)
 //
 //	if(!(succ || succui))
 //	{
-//		Serial_puts(UART_DEBUG_MODULE, "Invalid arguments!\r\n", 100);
+//		Serial_puts(SERIAL_MODULE, "Invalid arguments!\r\n", 100);
 //		return -1;
 //	}
 //
-//	Serial_puts(UART_DEBUG_MODULE, printbuf, 64);
+//	Serial_puts(SERIAL_MODULE, printbuf, 64);
 	return -1;
 }
 
@@ -205,7 +207,7 @@ int get_main(char* argv[], int argc)
 	char printbuf[64] = "No arg specified!\r\n";
 	if(argc != 2)
 	{
-		Serial_puts(UART_DEBUG_MODULE, "USAGE:\r\n\tget <VAR>\r\n", 100);
+		Serial_puts(SERIAL_MODULE, "USAGE:\r\n\tget <VAR>\r\n");
 		return -1;
 	}
 
@@ -225,20 +227,20 @@ int get_main(char* argv[], int argc)
 			switch(set_entries[i].type)
 			{
 			case VARTYPE_FLOAT:
-				Serial_puts(UART_DEBUG_MODULE, "float -> ", 9);
+				Serial_puts(SERIAL_MODULE, "float -> ");
 				break;
 			case VARTYPE_INT:
-				Serial_puts(UART_DEBUG_MODULE, "int -> ", 7);
+				Serial_puts(SERIAL_MODULE, "int -> ");
 				break;
 			case VARTYPE_UINT:
-				Serial_puts(UART_DEBUG_MODULE, "uint -> ", 8);
+				Serial_puts(SERIAL_MODULE, "uint -> ");
 				break;
 			case VARTYPE_BOOL:
-				Serial_puts(UART_DEBUG_MODULE, "bool -> ", 8);
+				Serial_puts(SERIAL_MODULE, "bool -> ");
 				break;
 			}
 
-			Serial_puts(UART_DEBUG_MODULE, set_entries[i].name, SET_MAX_NAMELEN);
+			Serial_puts(SERIAL_MODULE, set_entries[i].name);
 
 			float ffloat;
 			int32_t fint;
@@ -272,7 +274,7 @@ int get_main(char* argv[], int argc)
 				break;
 			}
 
-			Serial_puts(UART_DEBUG_MODULE, printbuf, fast_strlen(printbuf));
+			Serial_puts(SERIAL_MODULE, printbuf);
 
 			if(!listall)
 				return 0;
@@ -282,9 +284,9 @@ int get_main(char* argv[], int argc)
 	if(listall)
 		return 0;
 
-	Serial_puts(UART_DEBUG_MODULE, "No such variable: ", 100);
-	Serial_puts(UART_DEBUG_MODULE, argv[1], SET_MAX_NAMELEN);
-	Serial_puts(UART_DEBUG_MODULE, "\r\n", 2);
+	Serial_puts(SERIAL_MODULE, "No such variable: ");
+	Serial_puts(SERIAL_MODULE, argv[1]);
+	Serial_puts(SERIAL_MODULE, "\r\n");
 
 //	if(argc == 2)
 //	{
@@ -314,7 +316,7 @@ int get_main(char* argv[], int argc)
 //			fast_snprintf(printbuf, 64, "servo_min_highband=%d\r\n",
 //					servo_min_highband);
 //		}
-//		Serial_puts(UART_DEBUG_MODULE, printbuf, 64);
+//		Serial_puts(SERIAL_MODULE, printbuf, 64);
 //	}
 
 	return -1;

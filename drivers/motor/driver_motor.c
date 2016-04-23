@@ -5,7 +5,7 @@
  *      Author: Kevin
  */
 
-#include "motor.h"
+#include "driver_motor.h"
 
 #include "driverlib/gpio.h"
 #include "driverlib/pwm.h"
