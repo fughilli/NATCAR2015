@@ -25,6 +25,7 @@ SECTIONS {
     PROVIDE (_intvecs_base_address = 0x0);
 
     .isr_vector (_intvecs_base_address) : AT (_intvecs_base_address) {
+        __text_start__ = .;
         KEEP (*(.isr_vector))
     } > REGION_TEXT
 
@@ -48,11 +49,13 @@ SECTIONS {
         __init_array_end = .;
         *(.init)
         *(.fini*)
+        __text_end__ = .;
     } > REGION_TEXT
 
     PROVIDE (__etext = .);
     PROVIDE (_etext = .);
     PROVIDE (etext = .);
+    /*PROVIDE (__text_end__ = .);*/
 
     .rodata : {
         *(.rodata)
