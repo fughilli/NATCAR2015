@@ -19,8 +19,23 @@
 #include "inc/hw_memmap.h"
 #include "inc/hw_types.h"
 #include "inc/hw_uart.h"
+#include "utils/circular_buffer.h"
 
 #include <stdint.h>
+
+typedef struct
+{
+    uint8_t rxbuffer_data[SERIAL_RXBUFFER_DEPTH],
+            rxprebuffer_data[SERIAL_RXPREBUFFER_DEPTH],
+            txbuffer_data[SERIAL_TXBUFFER_DEPTH],
+            txprebuffer_data[SERIAL_TXPREBUFFER_DEPTH];
+    circular_buffer_t txbuffer, rxbuffer, txprebuffer, rxprebuffer;
+} Serial_module_buffers_t;
+
+Serial_module_buffers_t uart_buffers[8];
+
+bool uart_rx_locks[8] = { 0 };
+bool uart_tx_locks[8] = { 0 };
 
 const uint32_t uart_bases[8] =
 {
@@ -85,8 +100,78 @@ GPIO_PIN_4 | GPIO_PIN_5,
 GPIO_PIN_4 | GPIO_PIN_5,
 GPIO_PIN_0 | GPIO_PIN_1 };
 
+const uint32_t uart_interrupts[8] =
+{
+    INT_UART0,
+    INT_UART1,
+    INT_UART2,
+    INT_UART3,
+    INT_UART4,
+    INT_UART5,
+    INT_UART6,
+    INT_UART7
+};
+
+void Serial_ISR(Serial_module_e module)
+{
+    // Hang on to these pointers to avoid typing this shit a billion times
+    circular_buffer_t* buffer = &uart_buffers[module].rxbuffer;
+    circular_buffer_t* prebuffer = &uart_buffers[module].rxprebuffer;
+
+    uint32_t intstatus = UARTIntStatus(uart_bases[module], true);
+
+    //// If another piece of code is modifying the buffers, we have to push into
+    //// the prebuffer
+    //if(uart_rx_locks[module])
+    //{
+    //    circular_buffer_push(prebuffer, UARTCharGet(uart_bases[module]));
+    //}
+    //else
+    //{
+    //    // If there are characters in the prebuffer, push them into the main
+    //    // buffer
+    //    while(!circular_buffer_empty(prebuffer))
+    //    {
+    //        circular_buffer_push(buffer, circular_buffer_front(prebuffer));
+    //        circular_buffer_pop(prebuffer);
+    //    }
+
+        while(UARTCharsAvail(uart_bases[module]))
+        {
+            // Push the new character into the buffer
+            circular_buffer_push(buffer, UARTCharGet(uart_bases[module]));
+        }
+    //}
+
+    UARTIntClear(uart_bases[module], intstatus);
+}
+
+void Serial_0_ISR() { Serial_ISR(Serial_module_0); }
+void Serial_1_ISR() { Serial_ISR(Serial_module_1); }
+void Serial_2_ISR() { Serial_ISR(Serial_module_2); }
+void Serial_3_ISR() { Serial_ISR(Serial_module_3); }
+void Serial_4_ISR() { Serial_ISR(Serial_module_4); }
+void Serial_5_ISR() { Serial_ISR(Serial_module_5); }
+void Serial_6_ISR() { Serial_ISR(Serial_module_6); }
+void Serial_7_ISR() { Serial_ISR(Serial_module_7); }
+
 void Serial_init(Serial_module_e module, uint32_t baud)
 {
+    circular_buffer_init(&uart_buffers[module].rxbuffer,
+                         uart_buffers[module].rxbuffer_data,
+                         SERIAL_RXBUFFER_DEPTH);
+    circular_buffer_init(&uart_buffers[module].txbuffer,
+                         uart_buffers[module].txbuffer_data,
+                         SERIAL_TXBUFFER_DEPTH);
+    circular_buffer_init(&uart_buffers[module].rxprebuffer,
+                         uart_buffers[module].rxprebuffer_data,
+                         SERIAL_RXPREBUFFER_DEPTH);
+    circular_buffer_init(&uart_buffers[module].txprebuffer,
+                         uart_buffers[module].txprebuffer_data,
+                         SERIAL_TXPREBUFFER_DEPTH);
+
+    uart_rx_locks[module] = false;
+    uart_tx_locks[module] = false;
 
     SysCtlPeripheralEnable(uart_peripherals[module]);
     SysCtlPeripheralEnable(gpio_peripherals[module]);
@@ -96,8 +181,12 @@ void Serial_init(Serial_module_e module, uint32_t baud)
     GPIOPinConfigure(gpio_configs_tx[module]);
     GPIOPinConfigure(gpio_configs_rx[module]);
     GPIOPinTypeUART(gpio_bases[module], uart_gpio_pins[module]);
+    UARTFIFOEnable(uart_bases[module]);
+    UARTFIFOLevelSet(uart_bases[module], UART_FIFO_TX1_8, UART_FIFO_RX1_8);
 
-    UARTIntDisable(uart_bases[module], 0xFFFFFFFF);
+    UARTIntEnable(uart_bases[module], UART_INT_RX | UART_INT_RT);
+
+//    UARTIntDisable(uart_bases[module], 0xFFFFFFFF);
 
 //    UARTFIFOLevelSet(UART0_BASE, UART_FIFO_TX1_8, UART_FIFO_RX1_8);
 //    UARTIntRegister(UART0_BASE, Serial_ISR);
@@ -105,6 +194,7 @@ void Serial_init(Serial_module_e module, uint32_t baud)
 //    IntEnable(INT_UART0);
 
     UARTEnable(uart_bases[module]);
+    IntEnable(uart_interrupts[module]);
 }
 
 void Serial_putc(Serial_module_e module, char c)
@@ -114,14 +204,40 @@ void Serial_putc(Serial_module_e module, char c)
 
 bool Serial_avail(Serial_module_e module)
 {
-    return UARTCharsAvail(uart_bases[module]);
+    //return UARTCharsAvail(uart_bases[module]);
+    //uart_rx_locks[module] = true;
+    UARTIntDisable(uart_bases[module], UART_INT_RX);
+
+    bool ret = !circular_buffer_empty(&uart_buffers[module].rxbuffer);
+
+    //uart_rx_locks[module] = false;
+    UARTIntEnable(uart_bases[module], UART_INT_RX);
+
+    return ret;
 }
 
 int Serial_getc(Serial_module_e module)
 {
-    if (!UARTCharsAvail(uart_bases[module]))
-        return -1;
-    return (int) UARTCharGet(uart_bases[module]);
+    //if (!UARTCharsAvail(uart_bases[module]))
+    //    return -1;
+    //return (int) UARTCharGet(uart_bases[module]);
+    //
+    //uart_rx_locks[module] = true;
+    UARTIntDisable(uart_bases[module], UART_INT_RX);
+
+    if(!circular_buffer_empty(&uart_buffers[module].rxbuffer))
+    {
+        int temp = circular_buffer_front(&uart_buffers[module].rxbuffer);
+        circular_buffer_pop(&uart_buffers[module].rxbuffer);
+
+        //uart_rx_locks[module] = false;
+        UARTIntEnable(uart_bases[module], UART_INT_RX);
+        return temp;
+    }
+
+    //uart_rx_locks[module] = false;
+    UARTIntEnable(uart_bases[module], UART_INT_RX);
+    return -1;
 }
 
 void Serial_puts(Serial_module_e module, const char * s)

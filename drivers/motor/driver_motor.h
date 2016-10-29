@@ -8,6 +8,10 @@
 #ifndef MOTOR_H_
 #define MOTOR_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 
 extern uint32_t
@@ -23,5 +27,9 @@ void motor_releaseBrake();
 
 void servo_setPosf(float pos);
 void servo_setPosi(uint32_t pos);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* MOTOR_H_ */

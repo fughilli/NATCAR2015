@@ -53,10 +53,6 @@ typedef enum
 volatile camera_writer_t camera_writer;
 
 
-#define _CT_ATOI(val) #val
-#define CT_ATOI(val) _CT_ATOI(val)
-#define DEBUG_LINE(_label_) Serial_puts(SERIAL_MODULE,"inside \"" _label_ "\" @ " __FILE__ ":" CT_ATOI(__LINE__) "\r\n")
-
 //void camera_permute_readers_writers()
 //{
 //    switch (camera_writer)

@@ -11,6 +11,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define SERIAL_RXBUFFER_DEPTH (64)
+#define SERIAL_TXBUFFER_DEPTH (64)
+#define SERIAL_RXPREBUFFER_DEPTH (4)
+#define SERIAL_TXPREBUFFER_DEPTH (4)
+
 typedef enum
 {
     Serial_module_0 = 0,
