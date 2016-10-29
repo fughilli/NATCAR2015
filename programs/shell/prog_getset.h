@@ -8,6 +8,10 @@
 #ifndef PROG_GETSET_H_
 #define PROG_GETSET_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #define SET_MAX_NAMELEN (16)
 #define MAX_SET_ENTRIES (64)
 
@@ -34,5 +38,9 @@ int set_main(char* argv[], int argc);
 void set_register_variable(const char* name, vartype_t type, void* data);
 
 void set_init_table();
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* PROG_GETSET_H_ */

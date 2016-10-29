@@ -7,9 +7,11 @@
 
 #include "shell.h"
 #include <stdint.h>
-#include "../driver_serial.h"
+#include "drivers/driver_serial.h"
 
 #include "global_settings.h"
+
+//const extern shell_stream_adapter_t shell_stream_adapter;
 
 const uint8_t _bsp_seq[] = {SHELL_BACKSPACE, ' ', SHELL_BACKSPACE};
 
@@ -30,17 +32,17 @@ shell_progMapEntry_t shell_progMap[SHELL_MAX_PROGRAMS];
 
 int help_main(char* argv[], int argc)
 {
-	Serial_puts(SERIAL_MODULE, "The following programs are available:\r\n");
-	int i;
-	for(i = 0; i < SHELL_MAX_PROGRAMS; i++)
-	{
-		if(fast_strlen(shell_progMap[i].name))
-		{
-			Serial_puts(SERIAL_MODULE, shell_progMap[i].name);
-			Serial_puts(SERIAL_MODULE, "\r\n");
-		}
-	}
-	return 0;
+    shell_stream_adapter.puts("The following programs are available:\r\n");
+    int i;
+    for(i = 0; i < SHELL_MAX_PROGRAMS; i++)
+    {
+        if(fast_strlen(shell_progMap[i].name))
+        {
+            shell_stream_adapter.puts(shell_progMap[i].name);
+            shell_stream_adapter.puts("\r\n");
+        }
+    }
+    return 0;
 }
 
 void shell_initProgMap()
@@ -54,12 +56,12 @@ void shell_initProgMap()
 
 void shell_init()
 {
-	Serial_puts(SERIAL_MODULE, DEVICE_IDENTIFIER ":>");
-	shell_lineBufferIndex = 0;
+    shell_stream_adapter.puts(DEVICE_IDENTIFIER ":>");
+    shell_lineBufferIndex = 0;
 
-	shell_initProgMap();
+    shell_initProgMap();
 
-	shell_registerProgram("help", help_main);
+    shell_registerProgram("help", help_main);
 }
 
 bool shell_registerProgram(const char* name, shell_func_t prog_main)
@@ -100,66 +102,66 @@ shell_func_t shell_getProg(const char* name)
 
 void shell_poll()
 {
-	if (!Serial_avail(SERIAL_MODULE))
-		return;
+    if (!shell_stream_adapter.avail(SERIAL_MODULE))
+        return;
 
-	while (Serial_avail(SERIAL_MODULE))
-	{
-		char nextChar = Serial_getc(SERIAL_MODULE);
+    while (shell_stream_adapter.avail(SERIAL_MODULE))
+    {
+        char nextChar = shell_stream_adapter.getc(SERIAL_MODULE);
 
-		// Handle newline (end-of-command)
-		if (nextChar == '\r')
-		{
-			shell_lineBuffer[shell_lineBufferIndex++] = 0;
+        // Handle newline (end-of-command)
+        if (nextChar == '\r')
+        {
+            shell_lineBuffer[shell_lineBufferIndex++] = 0;
 
-			Serial_puts(SERIAL_MODULE, "\r\n");
+            shell_stream_adapter.puts("\r\n");
 
-			shell_processLine();
+            shell_processLine();
 
-			Serial_puts(SERIAL_MODULE, DEVICE_IDENTIFIER ":>");
-			shell_lineBufferIndex = 0;
-			break;
-		}
-		else if (nextChar == SHELL_BACKSPACE)
-		{
-			if (shell_lineBufferIndex > 0)
-			{
-				shell_lineBufferIndex--;
-				Serial_writebuf(SERIAL_MODULE, _bsp_seq, 3);
-			}
-			else
-			{
-				Serial_putc(SERIAL_MODULE, SHELL_BELL_CHAR);
-			}
-			continue;
-		}
-		// Handle special character
-		else if (nextChar < ' ')
-		{
-			continue;
-		}
-		else
-		{
-			shell_lineBuffer[shell_lineBufferIndex++] = nextChar;
-		}
+            shell_stream_adapter.puts(DEVICE_IDENTIFIER ":>");
+            shell_lineBufferIndex = 0;
+            break;
+        }
+        else if (nextChar == SHELL_BACKSPACE)
+        {
+            if (shell_lineBufferIndex > 0)
+            {
+                shell_lineBufferIndex--;
+                shell_stream_adapter.writebuf(_bsp_seq, 3);
+            }
+            else
+            {
+                shell_stream_adapter.putc(SHELL_BELL_CHAR);
+            }
+            continue;
+        }
+        // Handle special character
+        else if (nextChar < ' ')
+        {
+            continue;
+        }
+        else
+        {
+            shell_lineBuffer[shell_lineBufferIndex++] = nextChar;
+        }
 
-		// Handle line buffer overrun
-		if (shell_lineBufferIndex == SHELL_LINE_BUFFER_SIZE)
-		{
-			Serial_putc(SERIAL_MODULE, SHELL_BELL_CHAR);
-			shell_lineBufferIndex--;
-			continue;
-		}
+        // Handle line buffer overrun
+        if (shell_lineBufferIndex == SHELL_LINE_BUFFER_SIZE)
+        {
+            shell_stream_adapter.putc(SHELL_BELL_CHAR);
+            shell_lineBufferIndex--;
+            continue;
+        }
 
-		Serial_putc(SERIAL_MODULE, nextChar);
-	}
+        shell_stream_adapter.putc(nextChar);
+    }
 }
 
 typedef struct
 {
-	shell_func_t func;
-	char** argv;
-	int argc;
+    shell_func_t func;
+    char** argv;
+    int argc;
 } shell_run_shim_params_t;
 
 void shell_processLine(void)
@@ -174,79 +176,79 @@ void shell_processLine(void)
     for (shell_lineIndex = 0; shell_lineIndex < shell_lineBufferIndex;
             shell_lineIndex++)
     {
-    	char nextChar = shell_lineBuffer[shell_lineIndex];
+        char nextChar = shell_lineBuffer[shell_lineIndex];
 
-    	if(quoteChar)
-    	{
-    		bool breakOnQuote = false;
-    		for (; shell_lineIndex < shell_lineBufferIndex;
-    		            shell_lineIndex++)
-    		    {
-    				nextChar = shell_lineBuffer[shell_lineIndex];
-    				if(nextChar == quoteChar)
-    				{
-    					breakOnQuote = true;
-    					break;
-    				}
-    		    }
+        if(quoteChar)
+        {
+            bool breakOnQuote = false;
+            for (; shell_lineIndex < shell_lineBufferIndex;
+                        shell_lineIndex++)
+                {
+                    nextChar = shell_lineBuffer[shell_lineIndex];
+                    if(nextChar == quoteChar)
+                    {
+                        breakOnQuote = true;
+                        break;
+                    }
+                }
 
-    		if(!breakOnQuote)
-    		{
-    			Serial_puts(SERIAL_MODULE, shell_error_mismatched_quotes);
-    			return;
-    		}
-    	}
+            if(!breakOnQuote)
+            {
+                shell_stream_adapter.puts(shell_error_mismatched_quotes);
+                return;
+            }
+        }
 
-		switch (nextChar)
-		{
-		case '\'':
-		case '\"':
-			if(!quoteChar)
-			{
-				quoteChar = nextChar;
-				shell_startOfTerm = &shell_lineBuffer[shell_lineIndex + 1];
-				break;
-			}
-			else if(nextChar == quoteChar)
-			{
-				quoteChar = 0;
-				shell_lineBuffer[shell_lineIndex] = 0;
-				break;
-			}
-		case SHELL_IFS:
-		case 0:
-			// If the maximum argument count has been reached
-			if (shell_argIndex == SHELL_MAX_ARGS)
-			{
-				Serial_puts(SERIAL_MODULE, shell_error_too_many_args);
-				return;
-			}
+        switch (nextChar)
+        {
+        case '\'':
+        case '\"':
+            if(!quoteChar)
+            {
+                quoteChar = nextChar;
+                shell_startOfTerm = &shell_lineBuffer[shell_lineIndex + 1];
+                break;
+            }
+            else if(nextChar == quoteChar)
+            {
+                quoteChar = 0;
+                shell_lineBuffer[shell_lineIndex] = 0;
+                break;
+            }
+        case SHELL_IFS:
+        case 0:
+            // If the maximum argument count has been reached
+            if (shell_argIndex == SHELL_MAX_ARGS)
+            {
+                shell_stream_adapter.puts(shell_error_too_many_args);
+                return;
+            }
 
-			// Swap the space character with a null byte
-			shell_lineBuffer[shell_lineIndex] = 0;
-			// Add the just-completed term to the argument list
-			shell_argBuffer[shell_argIndex++] = shell_startOfTerm;
-			// Start the next term after the null byte
-			while(shell_lineBuffer[shell_lineIndex + 1] == SHELL_IFS && shell_lineIndex != shell_lineBufferIndex)
-				shell_lineIndex++;
-			shell_startOfTerm = &shell_lineBuffer[shell_lineIndex + 1];
-			break;
-		}
+            // Swap the space character with a null byte
+            shell_lineBuffer[shell_lineIndex] = 0;
+            // Add the just-completed term to the argument list
+            shell_argBuffer[shell_argIndex++] = shell_startOfTerm;
+            // Start the next term after the null byte
+            while(shell_lineBuffer[shell_lineIndex + 1] == SHELL_IFS && shell_lineIndex != shell_lineBufferIndex)
+                shell_lineIndex++;
+            shell_startOfTerm = &shell_lineBuffer[shell_lineIndex + 1];
+            break;
+        }
     }
 
     shell_run_shim_params_t shim_params;
     if((shim_params.func = shell_getProg(shell_argBuffer[0])))
     {
-    	//shim_params.argc = shell_argIndex;
-    	//shim_params.argv = shell_argBuffer;
+        //shim_params.argc = shell_argIndex;
+        //shim_params.argv = shell_argBuffer;
 
-    	shim_params.func(shell_argBuffer, shell_argIndex);
+        shim_params.func(shell_argBuffer, shell_argIndex);
     }
     else
     {
-    	Serial_puts(SERIAL_MODULE, shell_error_unknown_command);
-        Serial_puts(SERIAL_MODULE, shell_argBuffer[0]);
-        Serial_puts(SERIAL_MODULE, "\'\r\n");
+        shell_stream_adapter.puts(shell_error_unknown_command);
+        shell_stream_adapter.puts(shell_argBuffer[0]);
+        shell_stream_adapter.puts("\'\r\n");
     }
 }
 

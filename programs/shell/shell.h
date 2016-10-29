@@ -8,6 +8,10 @@
 #ifndef SHELL_H_
 #define SHELL_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include "osprogram.h"
 #include "../fast_utils.h"
 #include <stdbool.h>
@@ -27,6 +31,18 @@ typedef int(*shell_func_t)(char* argv[], int argc);
 
 typedef struct
 {
+    int  (*getc)();
+    void (*putc)(char c);
+    void (*puts)(const char* s);
+    void (*writebuf)(const uint8_t* buf, uint32_t len);
+    void (*flush)();
+    bool (*avail)();
+} shell_stream_adapter_t;
+
+extern const shell_stream_adapter_t shell_stream_adapter;
+
+typedef struct
+{
     char name[SHELL_MAX_PROGRAM_NAMELEN];
     shell_func_t prog_main;
 } shell_progMapEntry_t;
@@ -34,5 +50,9 @@ typedef struct
 void shell_poll();
 void shell_init();
 bool shell_registerProgram(const char* name, shell_func_t prog_main);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* SHELL_H_ */

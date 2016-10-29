@@ -5,9 +5,10 @@
  *      Author: Kevin
  */
 
+#include "driver_serial.h"
+#include "fast_utils.h"
 #include "prog_getset.h"
-#include "../fast_utils.h"
-#include "../driver_serial.h"
+#include "shell.h"
 #include <stdbool.h>
 
 #include "global_settings.h"
@@ -41,7 +42,7 @@ int set_main(char* argv[], int argc)
 	char printbuf[64];
 	if(argc != 3)
 	{
-		Serial_puts(SERIAL_MODULE, "USAGE:\r\n\tset <VAR> <VAL>\r\n");
+		shell_stream_adapter.puts("USAGE:\r\n\tset <VAR> <VAL>\r\n");
 		return -1;
 	}
 
@@ -70,27 +71,27 @@ int set_main(char* argv[], int argc)
 
 			if(!succ)
 			{
-				Serial_puts(SERIAL_MODULE, "Invalid value!\r\n");
+				shell_stream_adapter.puts("Invalid value!\r\n");
 				return -1;
 			}
 
 			switch(set_entries[i].type)
 			{
 			case VARTYPE_FLOAT:
-				Serial_puts(SERIAL_MODULE, "float -> ");
+				shell_stream_adapter.puts("float -> ");
 				break;
 			case VARTYPE_INT:
-				Serial_puts(SERIAL_MODULE, "int -> ");
+				shell_stream_adapter.puts("int -> ");
 				break;
 			case VARTYPE_UINT:
-				Serial_puts(SERIAL_MODULE, "uint -> ");
+				shell_stream_adapter.puts("uint -> ");
 				break;
 			case VARTYPE_BOOL:
-				Serial_puts(SERIAL_MODULE, "bool -> ");
+				shell_stream_adapter.puts("bool -> ");
 				break;
 			}
 
-			Serial_puts(SERIAL_MODULE, set_entries[i].name);
+			shell_stream_adapter.puts(set_entries[i].name);
 
 			float ffloat;
 			int32_t fint;
@@ -124,15 +125,15 @@ int set_main(char* argv[], int argc)
 
 			}
 
-			Serial_puts(SERIAL_MODULE, printbuf);
+			shell_stream_adapter.puts(printbuf);
 
 			return 0;
 		}
 	}
 
-	Serial_puts(SERIAL_MODULE, "No such variable: ");
-	Serial_puts(SERIAL_MODULE, argv[1]);
-	Serial_puts(SERIAL_MODULE, "\r\n");
+	shell_stream_adapter.puts("No such variable: ");
+	shell_stream_adapter.puts(argv[1]);
+	shell_stream_adapter.puts("\r\n");
 
 //	bool succ = false, succui = false;
 //	float val = fast_sntof(argv[2], fast_strlen(argv[2]), 10, &succ);
@@ -194,11 +195,11 @@ int set_main(char* argv[], int argc)
 //
 //	if(!(succ || succui))
 //	{
-//		Serial_puts(SERIAL_MODULE, "Invalid arguments!\r\n", 100);
+//		shell_stream_adapter.puts("Invalid arguments!\r\n", 100);
 //		return -1;
 //	}
 //
-//	Serial_puts(SERIAL_MODULE, printbuf, 64);
+//	shell_stream_adapter.puts(printbuf, 64);
 	return -1;
 }
 
@@ -207,7 +208,7 @@ int get_main(char* argv[], int argc)
 	char printbuf[64] = "No arg specified!\r\n";
 	if(argc != 2)
 	{
-		Serial_puts(SERIAL_MODULE, "USAGE:\r\n\tget <VAR>\r\n");
+		shell_stream_adapter.puts("USAGE:\r\n\tget <VAR>\r\n");
 		return -1;
 	}
 
@@ -227,20 +228,20 @@ int get_main(char* argv[], int argc)
 			switch(set_entries[i].type)
 			{
 			case VARTYPE_FLOAT:
-				Serial_puts(SERIAL_MODULE, "float -> ");
+				shell_stream_adapter.puts("float -> ");
 				break;
 			case VARTYPE_INT:
-				Serial_puts(SERIAL_MODULE, "int -> ");
+				shell_stream_adapter.puts("int -> ");
 				break;
 			case VARTYPE_UINT:
-				Serial_puts(SERIAL_MODULE, "uint -> ");
+				shell_stream_adapter.puts("uint -> ");
 				break;
 			case VARTYPE_BOOL:
-				Serial_puts(SERIAL_MODULE, "bool -> ");
+				shell_stream_adapter.puts("bool -> ");
 				break;
 			}
 
-			Serial_puts(SERIAL_MODULE, set_entries[i].name);
+			shell_stream_adapter.puts(set_entries[i].name);
 
 			float ffloat;
 			int32_t fint;
@@ -274,7 +275,7 @@ int get_main(char* argv[], int argc)
 				break;
 			}
 
-			Serial_puts(SERIAL_MODULE, printbuf);
+			shell_stream_adapter.puts(printbuf);
 
 			if(!listall)
 				return 0;
@@ -284,9 +285,9 @@ int get_main(char* argv[], int argc)
 	if(listall)
 		return 0;
 
-	Serial_puts(SERIAL_MODULE, "No such variable: ");
-	Serial_puts(SERIAL_MODULE, argv[1]);
-	Serial_puts(SERIAL_MODULE, "\r\n");
+	shell_stream_adapter.puts("No such variable: ");
+	shell_stream_adapter.puts(argv[1]);
+	shell_stream_adapter.puts("\r\n");
 
 //	if(argc == 2)
 //	{
@@ -316,7 +317,7 @@ int get_main(char* argv[], int argc)
 //			fast_snprintf(printbuf, 64, "servo_min_highband=%d\r\n",
 //					servo_min_highband);
 //		}
-//		Serial_puts(SERIAL_MODULE, printbuf, 64);
+//		shell_stream_adapter.puts(printbuf, 64);
 //	}
 
 	return -1;
