@@ -27,8 +27,19 @@
 #include "driverlib/rom_map.h"
 #include "inc/hw_nvic.h"
 #include "inc/hw_memmap.h"
+#include <sys/stat.h>
 
 extern void PWMGen1Handler();
+extern void batmon_adc0_handler();
+extern void Serial_0_ISR();
+extern void Serial_1_ISR();
+extern void Serial_2_ISR();
+extern void Serial_3_ISR();
+extern void Serial_4_ISR();
+extern void Serial_5_ISR();
+extern void Serial_6_ISR();
+extern void Serial_7_ISR();
+extern void I2CIntHandler();
 
 //*****************************************************************************
 //
@@ -40,8 +51,6 @@ static void NmiSR(void);
 static void FaultISR(void);
 static void IntDefaultHandler(void);
 static void FPUFaultHandler(void);
-
-volatile uint32_t _sbrk;
 
 #ifndef HWREG
 #define HWREG(x) (*((volatile uint32_t *)(x)))
@@ -59,7 +68,7 @@ extern int main(void);
 // Reserve space for the system stack.
 //
 //*****************************************************************************
-static uint32_t pui32Stack[128];
+extern unsigned _estack;
 
 //*****************************************************************************
 //
@@ -78,7 +87,7 @@ static uint32_t pui32Stack[128];
 __attribute__ ((section(".isr_vector")))
 void (* const g_pfnVectors[])(void) =
 {
-    (void (*)(void))((uint32_t)pui32Stack + sizeof(pui32Stack)),
+    (void*)&_estack,
                                             // The initial stack pointer
     ResetISR,                               // The reset handler
     NmiSR,                                  // The NMI handler
@@ -100,17 +109,17 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port C
     IntDefaultHandler,                      // GPIO Port D
     IntDefaultHandler,                      // GPIO Port E
-    IntDefaultHandler,                      // UART0 Rx and Tx
-    IntDefaultHandler,                      // UART1 Rx and Tx
+    Serial_0_ISR,                      // UART0 Rx and Tx
+    Serial_1_ISR,                      // UART1 Rx and Tx
     IntDefaultHandler,                      // SSI0 Rx and Tx
-    IntDefaultHandler,                      // I2C0 Master and Slave
+    I2CIntHandler,                      // I2C0 Master and Slave
     IntDefaultHandler,                      // PWM Fault
     IntDefaultHandler,                      // PWM Generator 0
     PWMGen1Handler,                      	// PWM Generator 1
     IntDefaultHandler,                      // PWM Generator 2
     IntDefaultHandler,                      // Quadrature Encoder 0
     IntDefaultHandler,                      // ADC Sequence 0
-    IntDefaultHandler,                      // ADC Sequence 1
+    batmon_adc0_handler,                      // ADC Sequence 1
     IntDefaultHandler,                      // ADC Sequence 2
     IntDefaultHandler,                      // ADC Sequence 3
     IntDefaultHandler,                      // Watchdog timer
@@ -128,11 +137,11 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port F
     IntDefaultHandler,                      // GPIO Port G
     IntDefaultHandler,                      // GPIO Port H
-    IntDefaultHandler,                      // UART2 Rx and Tx
+    Serial_2_ISR,                      // UART2 Rx and Tx
     IntDefaultHandler,                      // SSI1 Rx and Tx
     IntDefaultHandler,                      // Timer 3 subtimer A
     IntDefaultHandler,                      // Timer 3 subtimer B
-    IntDefaultHandler,                      // I2C1 Master and Slave
+    I2CIntHandler,                      // I2C1 Master and Slave
     IntDefaultHandler,                      // Quadrature Encoder 1
     IntDefaultHandler,                      // CAN0
     IntDefaultHandler,                      // CAN1
@@ -154,17 +163,17 @@ void (* const g_pfnVectors[])(void) =
     IntDefaultHandler,                      // GPIO Port L
     IntDefaultHandler,                      // SSI2 Rx and Tx
     IntDefaultHandler,                      // SSI3 Rx and Tx
-    IntDefaultHandler,                      // UART3 Rx and Tx
-    IntDefaultHandler,                      // UART4 Rx and Tx
-    IntDefaultHandler,                      // UART5 Rx and Tx
-    IntDefaultHandler,                      // UART6 Rx and Tx
-    IntDefaultHandler,                      // UART7 Rx and Tx
+    Serial_3_ISR,                      // UART3 Rx and Tx
+    Serial_4_ISR,                      // UART4 Rx and Tx
+    Serial_5_ISR,                      // UART5 Rx and Tx
+    Serial_6_ISR,                      // UART6 Rx and Tx
+    Serial_7_ISR,                      // UART7 Rx and Tx
     0,                                      // Reserved
     0,                                      // Reserved
     0,                                      // Reserved
     0,                                      // Reserved
-    IntDefaultHandler,                      // I2C2 Master and Slave
-    IntDefaultHandler,                      // I2C3 Master and Slave
+    I2CIntHandler,                      // I2C2 Master and Slave
+    I2CIntHandler,                      // I2C3 Master and Slave
     IntDefaultHandler,                      // Timer 4 subtimer A
     IntDefaultHandler,                      // Timer 4 subtimer B
     0,                                      // Reserved
@@ -243,11 +252,17 @@ void (* const g_pfnVectors[])(void) =
 // for the "data" segment resides immediately following the "text" segment.
 //
 //*****************************************************************************
-extern uint32_t __etext;
-extern uint32_t __data_start__;
-extern uint32_t __data_end__;
-extern uint32_t __bss_start__;
-extern uint32_t __bss_end__;
+extern unsigned long _etext;
+extern unsigned long _data;
+extern unsigned long _edata;
+extern unsigned long _bss;
+extern unsigned long _ebss;
+extern void (*__preinit_array_start[])(void);
+extern void (*__preinit_array_end[])(void);
+extern void (*__init_array_start[])(void);
+extern void (*__init_array_end[])(void);
+extern void _init(void);
+
 
 //*****************************************************************************
 //
@@ -259,51 +274,56 @@ extern uint32_t __bss_end__;
 // application.
 //
 //*****************************************************************************
-void
-ResetISR(void)
-{
-    uint32_t *pui32Src, *pui32Dest;
+void ResetISR(void) {
+    unsigned long *pulSrc, *pulDest;
+    unsigned i, cnt;
 
     //
     // Copy the data segment initializers from flash to SRAM.
     //
-    pui32Src = &__etext;
-    for(pui32Dest = &__data_start__; pui32Dest < &__data_end__; )
-    {
-        *pui32Dest++ = *pui32Src++;
+    pulSrc = &_etext;
+    for (pulDest = &_data; pulDest < &_edata;) {
+        *pulDest++ = *pulSrc++;
     }
 
     //
     // Zero fill the bss segment.
     //
-    __asm("    ldr     r0, =__bss_start__\n"
-          "    ldr     r1, =__bss_end__\n"
-          "    mov     r2, #0\n"
-          "    .thumb_func\n"
-          "zero_loop:\n"
-          "        cmp     r0, r1\n"
-          "        it      lt\n"
-          "        strlt   r2, [r0], #4\n"
-          "        blt     zero_loop");
+    __asm(  "    ldr     r0, =_bss\n"
+            "    ldr     r1, =_ebss\n"
+            "    mov     r2, #0\n"
+            "    .thumb_func\n"
+            "1:\n"
+            "    cmp     r0, r1\n"
+            "    it      lt\n"
+            "    strlt   r2, [r0], #4\n"
+            "    blt     1b"
+    );
+    (void)_bss; (void)_ebss; // get rid of unused warnings
 
     //
-    // Enable the floating-point unit.  This must be done here to handle the
-    // case where main() uses floating-point and the function prologue saves
-    // floating-point registers (which will fault if floating-point is not
-    // enabled).  Any configuration of the floating-point unit using DriverLib
-    // APIs must be done here prior to the floating-point unit being enabled.
+    // Enable the floating-point unit before calling c++ ctors
     //
-    // Note that this does not use DriverLib since it might not be included in
-    // this project.
-    //
-//    HWREG(NVIC_CPAC) = ((HWREG(NVIC_CPAC) &
-//                             ~(NVIC_CPAC_CP10_M | NVIC_CPAC_CP11_M)) |
-//                             NVIC_CPAC_CP10_FULL | NVIC_CPAC_CP11_FULL);
 
-    HWREG(0xE000ED88) = ((HWREG(0xE000ED88) & ~0x00F00000) | 0x00F00000);
-    
+    HWREG(NVIC_CPAC) = ((HWREG(NVIC_CPAC) &
+                         ~(NVIC_CPAC_CP10_M | NVIC_CPAC_CP11_M)) |
+                         NVIC_CPAC_CP10_FULL | NVIC_CPAC_CP11_FULL);
+
     //
-    // Call the application's entry point.
+    // call any global c++ ctors
+    //
+    cnt = __preinit_array_end - __preinit_array_start;
+    for (i = 0; i < cnt; i++)
+        __preinit_array_start[i]();
+
+    _init();
+
+    cnt = __init_array_end - __init_array_start;
+    for (i = 0; i < cnt; i++)
+        __init_array_start[i]();
+
+    //
+    // call 'C' entry point, Energia never returns from main
     //
     main();
 }
@@ -315,14 +335,12 @@ ResetISR(void)
 // by a debugger.
 //
 //*****************************************************************************
-static void
-NmiSR(void)
-{
+static void NmiSR(void) {
     //
     // Enter an infinite loop.
     //
-    while(1)
-    {
+    while (1) {
+        ; // trap NMI
     }
 }
 
@@ -333,14 +351,12 @@ NmiSR(void)
 // for examination by a debugger.
 //
 //*****************************************************************************
-static void
-FaultISR(void)
-{
+static void FaultISR(void) {
     //
     // Enter an infinite loop.
     //
-    while(1)
-    {
+    while (1) {
+        ; // trap FAULT
     }
 }
 
@@ -351,35 +367,115 @@ FaultISR(void)
 // for examination by a debugger.
 //
 //*****************************************************************************
-static void
-IntDefaultHandler(void)
-{
+static void IntDefaultHandler(void) {
     //
     // Go into an infinite loop.
     //
-    while(1)
-    {
+    while (1) {
+        ; // trap any handler not defined
     }
 }
 
-static void
-FPUFaultHandler(void)
-{
-	//
-	// Go into an infinite loop.
-	//
-	while(1)
-	{
-	}
+static void FPUFaultHandler(void) {
+    while(1) {
+        ;
+    }
 }
 
-__attribute__ ((noreturn()))
-void
-_exit(int arg)
+/* syscall stuff */
+__attribute__((weak))
+void *__dso_handle = 0;
+
+/**
+ * _sbrk - newlib memory allocation routine
+ */
+typedef char *caddr_t;
+
+__attribute__((weak))
+caddr_t _sbrk (int incr)
 {
-	// Trap in a while loop
-	while(1)
-	{
-		;
-	}
+    double current_sp;
+    extern char end asm ("end"); /* Defined by linker */
+    static char * heap_end;
+    char * prev_heap_end;
+
+    if (heap_end == NULL) {
+        heap_end = &end; /* first ram address after bss and data */
+    }
+
+    prev_heap_end = heap_end;
+
+    // simplistic approach to prevent the heap from corrupting the stack
+    // TBD: review for alternatives
+    if ( heap_end + incr < (caddr_t)&current_sp ) {
+        heap_end += incr;
+        return (caddr_t) prev_heap_end;
+    }
+    else {
+        return NULL;
+    }
 }
+
+__attribute__((weak))
+extern int link( char *cOld, char *cNew )
+{
+    return -1 ;
+}
+
+__attribute__((weak))
+extern int _close( int file )
+{
+    return -1 ;
+}
+
+__attribute__((weak))
+extern int _fstat( int file, struct stat *st )
+{
+    st->st_mode = S_IFCHR ;
+
+    return 0 ;
+}
+
+__attribute__((weak))
+extern int _isatty( int file )
+{
+    return 1 ;
+}
+
+__attribute__((weak))
+extern int _lseek( int file, int ptr, int dir )
+{
+    return 0 ;
+}
+
+__attribute__((weak))
+extern int _read(int file, char *ptr, int len)
+{
+    return 0 ;
+}
+
+__attribute__((weak))
+extern int _write( int file, char *ptr, int len )
+{
+    return len;
+}
+
+__attribute__((weak))
+extern void _kill( int pid, int sig )
+{
+    return ;
+}
+
+__attribute__((weak))
+extern int _getpid ( void )
+{
+    return -1 ;
+}
+
+/*
+__attribute__((weak))
+extern void _exit (void)
+{
+
+}
+*/
